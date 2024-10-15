@@ -9,7 +9,6 @@ class AuthService:
         self.session = session
 
     async def get_user_by_phone(self, phone: str) -> User | None:
-        print(phone)
         stmt = select(self.model).where(self.model.phone == phone)
         res = (await self.session.execute(stmt)).scalar_one_or_none()
         return res
