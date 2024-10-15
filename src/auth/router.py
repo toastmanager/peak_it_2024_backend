@@ -43,5 +43,5 @@ async def verify_auth_code(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Code expired"
         )
 
-    access_token = create_access_token({"sub": user.phone_number})
+    access_token = create_access_token({"sub": str(user.id)})
     return {"access_token": access_token, "token_type": "bearer"}
