@@ -1,11 +1,10 @@
 import uuid
 
-from fastapi import Depends, Request
+from fastapi import Request
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi_users import BaseUserManager, UUIDIDMixin
 from fastapi_users import exceptions
 
-from src.auth.dependencies import get_auth_service
 from src.auth.schemas import UserCreate
 from src.config import SECRET
 from src.auth.models import User
@@ -72,10 +71,8 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
             await self.on_after_register(created_user, request)
 
             return created_user
-    
-    async def authenticate(
-        self, credentials: OAuth2PasswordRequestForm
-    ) -> User | None:
+
+    async def authenticate(self, credentials: OAuth2PasswordRequestForm) -> User | None:
         """
         Authenticate and return a user following an email and a password.
 
@@ -101,6 +98,8 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
                 return None
             # Update password hash to a more robust one if needed
             if updated_password_hash is not None:
-                await self.user_db.update(user, {"hashed_password": updated_password_hash})
+                await self.user_db.update(
+                    user, {"hashed_password": updated_password_hash}
+                )
 
             return user
