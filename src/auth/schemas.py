@@ -1,19 +1,15 @@
-import uuid
-
-from fastapi_users import schemas
-from pydantic import EmailStr
-from pydantic_extra_types.phone_numbers import PhoneNumber
+from pydantic import BaseModel
 
 
-class UserRead(schemas.BaseUser[uuid.UUID]):
-    phone: PhoneNumber
-    email: EmailStr | None
+class AuthCodeRequest(BaseModel):
+    phone_number: str
 
 
-class UserCreate(schemas.BaseUserCreate):
-    phone: PhoneNumber
-    email: EmailStr | None
+class AuthCodeVerifyRequest(BaseModel):
+    phone_number: str
+    code: str
 
 
-class UserUpdate(schemas.BaseUserUpdate):
-    pass
+class AuthTokenResponse(BaseModel):
+    access_token: str
+    token_type: str

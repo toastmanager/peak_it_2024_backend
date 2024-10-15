@@ -10,4 +10,4 @@ DB_PASS = f"{os.environ.get("DB_PASS")}"
 DB_HOST = f"{os.environ.get("DB_HOST")}"
 DB_PORT = f"{os.environ.get("DB_PORT")}"
 
-SECRET = f"{os.environ.get("SECRET")}"
+SECRET_AUTH = f"{os.environ.get("SECRET_AUTH")}"
