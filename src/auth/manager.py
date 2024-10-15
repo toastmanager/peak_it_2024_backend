@@ -2,8 +2,8 @@ import uuid
 
 from fastapi import Request
 from fastapi.security import OAuth2PasswordRequestForm
-from fastapi_users import BaseUserManager, UUIDIDMixin
-from fastapi_users import exceptions
+from fastapi_users import BaseUserManager, UUIDIDMixin, exceptions
+import phonenumbers
 
 from src.auth.schemas import UserCreate
 from src.config import SECRET
@@ -63,8 +63,13 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
                 if safe
                 else user_create.create_update_dict_superuser()
             )
-            password = user_dict.pop("password")
+            password: str = user_dict.pop("password")
+            phone: str = user_dict.pop("phone")
             user_dict["hashed_password"] = self.password_helper.hash(password)
+            user_dict["phone"] = phonenumbers.format_number(
+                phonenumbers.parse(phone), phonenumbers.PhoneNumberFormat.INTERNATIONAL
+            )
+            user_dict["email"] = None
 
             created_user = await self.user_db.create(user_dict)
 
@@ -80,26 +85,43 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
 
         :param credentials: The user credentials.
         """
+        try:
+            user = await self.get_by_phone(
+                phonenumbers.format_number(
+                    phonenumbers.parse(credentials.username),
+                    phonenumbers.PhoneNumberFormat.INTERNATIONAL,
+                )
+            )
+        except exceptions.UserNotExists:
+            # Run the hasher to mitigate timing attack
+            # Inspired from Django: https://code.djangoproject.com/ticket/20760
+            self.password_helper.hash(credentials.password)
+            return None
+
+        verified, updated_password_hash = self.password_helper.verify_and_update(
+            credentials.password, user.hashed_password
+        )
+        if not verified:
+            return None
+        # Update password hash to a more robust one if needed
+        if updated_password_hash is not None:
+            await self.user_db.update(user, {"hashed_password": updated_password_hash})
+
+        return user
+
+    async def get_by_phone(self, phone: str) -> User:
+        """
+        Get a user by e-mail.
+
+        :param user_email: E-mail of the user to retrieve.
+        :raises UserNotExists: The user does not exist.
+        :return: A user.
+        """
         async with async_session_maker() as session:
             auth_service = AuthService(session)
+            user = await auth_service.get_user_by_phone(phone)
 
-            try:
-                user = await auth_service.get_user_by_phone(credentials.username)
-            except exceptions.UserNotExists:
-                # Run the hasher to mitigate timing attack
-                # Inspired from Django: https://code.djangoproject.com/ticket/20760
-                self.password_helper.hash(credentials.password)
-                return None
-
-            verified, updated_password_hash = self.password_helper.verify_and_update(
-                credentials.password, user.hashed_password
-            )
-            if not verified:
-                return None
-            # Update password hash to a more robust one if needed
-            if updated_password_hash is not None:
-                await self.user_db.update(
-                    user, {"hashed_password": updated_password_hash}
-                )
+            if user is None:
+                raise exceptions.UserNotExists()
 
             return user
