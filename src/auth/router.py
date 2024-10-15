@@ -1,7 +1,7 @@
 import uuid
+
 from fastapi import APIRouter
 from fastapi_users import FastAPIUsers
-
 from src.auth.schemas import UserCreate, UserRead
 from src.auth.dependencies import get_user_manager
 from src.auth.models import User
