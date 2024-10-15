@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from datetime import datetime, timedelta, timezone
 
-from src.auth.dependencies import get_auth_service
+from src.auth.dependencies import get_auth_service, get_current_user
 from src.auth.schemas import AuthCodeRequest, AuthCodeVerifyRequest, AuthTokenResponse
 from src.auth.service import AuthService
 from src.auth import exceptions, constants
