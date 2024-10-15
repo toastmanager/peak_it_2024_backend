@@ -1,6 +1,7 @@
 import string
 import random
 from datetime import datetime, timedelta, timezone
+import uuid
 
 from jose import jwt
 
@@ -20,3 +21,13 @@ def create_access_token(data: dict):
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_AUTH, algorithm=ALGORITHM)
     return encoded_jwt
+
+
+def create_refresh_token():
+    return str(uuid.uuid4())
+
+
+def create_token_pair(user_id: uuid.UUID):
+    access_token = create_access_token({"sub": str(user_id)})
+    refresh_token = create_refresh_token()
+    return {"access_token": access_token, "refresh_token": refresh_token}
