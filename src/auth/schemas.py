@@ -1,15 +1,26 @@
-import uuid
-
-from fastapi_users import schemas
+from pydantic import BaseModel
 
 
-class UserRead(schemas.BaseUser[uuid.UUID]):
-    pass
+class AuthCodeRequest(BaseModel):
+    phone_number: str
 
 
-class UserCreate(schemas.BaseUserCreate):
-    pass
+class AuthCodeVerifyRequest(BaseModel):
+    phone_number: str
+    code: str
 
 
-class UserUpdate(schemas.BaseUserUpdate):
-    pass
+class AuthTokenResponse(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str
+
+
+class TokenRefreshRequest(BaseModel):
+    refresh_token: str
+
+
+class TokenPairResponse(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str
