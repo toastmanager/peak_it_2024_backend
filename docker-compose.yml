@@ -4,16 +4,14 @@ services:
       context: .
       dockerfile: ./Dockerfile
     labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.server.rule=(Host(`${HOST}`))"
-      - "traefik.http.services.server.loadbalancer.server.port=80"
+      - traefik.enable=true
+      - traefik.http.routers.server.rule=(Host(`${HOST}`))
+      - traefik.http.services.server.loadbalancer.server.port=80
+    env_file:
+      - .env
     environment:
-      DB_USER: ${DB_USER} 
-      DB_PASS: ${DB_PASS} 
       DB_HOST: db
-      DB_PORT: 5432 
-      DB_NAME: ${DB_NAME} 
-      SECRET_AUTH: ${SECRET_AUTH}
+      DB_PORT: 5432
     deploy:
       mode: replicas
       replicas: 3
@@ -45,8 +43,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-    depends_on:
-      - reverse-proxy
 
   reverse-proxy:
     image: traefik
