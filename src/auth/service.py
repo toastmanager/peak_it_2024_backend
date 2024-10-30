@@ -1,112 +1,146 @@
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 import uuid
 
-from sqlalchemy import select, update, delete
-from sqlalchemy.ext.asyncio import AsyncSession
+from jwt.exceptions import InvalidTokenError
 
-from src.auth import models, exceptions
-from src.auth.constants import REFRESH_TOKEN_EXPIRE_DAYS
-from src.auth.utils import create_token_pair
+import src.auth.exceptions as auth_exc
+import src.auth.utils as auth_utils
+from src.auth.models import User
+from src.auth.repositories import AuthRepository, BlacklistTokenRepository
+from src.auth.schemas import CreateUser, Token
+from src.core.config import settings
 
 
 class AuthService:
-    def __init__(self, session: AsyncSession):
-        self.db = session
+    auth_repo: AuthRepository
+    blacklist_token_repo: BlacklistTokenRepository
 
-    async def create_or_update_auth_code(
-        self, phone_number: str, code: str, expiry: datetime
-    ):
-        existing_code = await self.db.execute(
-            select(models.AuthCode).where(models.AuthCode.phone_number == phone_number)
+    def __init__(
+        self,
+        users_repository: AuthRepository,
+        blacklist_token_repository: BlacklistTokenRepository,
+    ) -> None:
+        self.auth_repo = users_repository
+        self.blacklist_token_repo = blacklist_token_repository
+
+    async def create_user(self, create_user_schema: CreateUser) -> Token:
+        data = create_user_schema.model_dump()
+
+        user_with_that_username = await self.auth_repo.get_by(
+            field="username", value=data["username"]
         )
-        existing_code = existing_code.scalars().first()
-
-        if existing_code:
-            await self.db.execute(
-                update(models.AuthCode)
-                .where(models.AuthCode.id == existing_code.id)
-                .values(code=code, expiry=expiry)
-            )
-        else:
-            new_code = models.AuthCode(
-                phone_number=phone_number, code=code, expiry=expiry
-            )
-            self.db.add(new_code)
-
-        await self.db.commit()
-
-    async def verify_auth_code(self, phone_number: str, code: str):
-        db_code = await self.db.execute(
-            select(models.AuthCode).where(models.AuthCode.phone_number == phone_number)
+        user_with_that_email = await self.auth_repo.get_by(
+            field="email", value=data["email"]
         )
-        db_code = db_code.scalars().first()
+        if user_with_that_username:
+            raise auth_exc.already_exist_username
+        if user_with_that_email:
+            raise auth_exc.already_exist_email
 
-        if not db_code or db_code.code != code:
-            raise exceptions.InvalidAuthCode
+        password = data.pop("password")
+        data["hashed_password"] = auth_utils.hash_password(password)
 
-        if db_code.expiry < datetime.now(tz=timezone.utc):
-            await self.db.execute(
-                delete(models.AuthCode).where(models.AuthCode.id == db_code.id)
-            )
-            raise exceptions.AuthCodeExpired
-
-        user_query = await self.db.execute(
-            select(models.User).where(models.User.phone_number == phone_number)
-        )
-        user = user_query.scalars().first()
-
+        user = await self.auth_repo.create(attributes=data)
         if not user:
-            user = models.User(phone_number=phone_number)
-            self.db.add(user)
-            await self.db.commit()
+            raise auth_exc.failed_to_create
 
-        await self.db.execute(
-            delete(models.AuthCode).where(models.AuthCode.id == db_code.id)
-        )
-        await self.db.commit()
-        return user
+        return self.create_token(user)
 
-    async def create_refresh_token(self, user_id: uuid.UUID):
-        expiry = datetime.now(tz=timezone.utc) + timedelta(
-            days=REFRESH_TOKEN_EXPIRE_DAYS
-        )
-        refresh_token = models.RefreshToken(user_id=user_id, expiry=expiry)
-        self.db.add(refresh_token)
-        await self.db.commit()
-        await self.db.refresh(refresh_token)
-        return refresh_token.token
+    async def validate_auth_user(self, username: str, password: str) -> User:
+        user: User = await self.auth_repo.get_by(
+            field="username", value=username, unique=True
+        )  # type: ignore
+        if not user:
+            raise auth_exc.unauthenticated
 
-    async def refresh_access_token(self, refresh_token: str):
-        db_refresh_token = await self.db.execute(
-            select(models.RefreshToken)
-            .where(models.RefreshToken.token == refresh_token)
-            .where(models.RefreshToken.revoked == False)  # noqa: E712
-        )
-        db_refresh_token = db_refresh_token.scalars().first()
-        if not db_refresh_token or db_refresh_token.expiry < datetime.now(
-            tz=timezone.utc
+        if auth_utils.validate_password(
+            password=password, hashed_password=user.hashed_password
         ):
-            raise exceptions.InvalidAuthCode
+            return user
 
-        user = await self.db.get(models.User, db_refresh_token.user_id)
-        new_tokens = create_token_pair(user.id)  # type: ignore
+        raise auth_exc.unauthenticated
 
-        db_refresh_token.token = new_tokens["refresh_token"]
-        db_refresh_token.expiry = datetime.now(tz=timezone.utc) + timedelta(
-            days=REFRESH_TOKEN_EXPIRE_DAYS
+    async def login(self, username: str, password: str) -> Token:
+        user: User = await self.validate_auth_user(username=username, password=password)
+        return self.create_token(user)
+
+    async def refresh_token(self, payload: dict) -> Token:
+        token_id: uuid.UUID = uuid.UUID(hex=payload.get("jti"))
+        user_id: uuid.UUID = uuid.UUID(hex=payload.get("sub"))
+        blacklist_token = await self.blacklist_token_repo.get_by(
+            field="id", value=token_id, unique=True
         )
-        await self.db.commit()
-
-        return new_tokens
-
-    async def revoke_refresh_token(self, refresh_token: str):
-        db_refresh_token = await self.db.execute(
-            select(models.RefreshToken).where(
-                models.RefreshToken.token == refresh_token
-            )
+        if blacklist_token:
+            raise auth_exc.invalid_token
+        await self.blacklist_token_repo.create(
+            attributes={
+                "id": token_id,
+                "user_id": user_id,
+            }
         )
-        db_refresh_token = db_refresh_token.scalars().first()
-        if not db_refresh_token:
-            raise exceptions.InvalidAuthCode
-        db_refresh_token.revoked = True
-        await self.db.commit()
+        user: User = await self.get_current_auth_user_for_refresh(payload=payload)
+        return self.create_token(user)
+
+    def create_token(self, user: User) -> Token:
+        return Token(
+            access_token=self.create_access_token(user),
+            refresh_token=self.create_refresh_token(user),
+        )
+
+    def create_access_token(self, user: User) -> str:
+        jwt_payload = {
+            "sub": user.id.hex,
+            "username": user.username,
+            "email": user.email,
+            "superuser": user.superuser,
+        }
+        return auth_utils.create_jwt(token_type="access", token_data=jwt_payload)
+
+    def create_refresh_token(self, user: User) -> str:
+        jwt_payload = {
+            "sub": user.id.hex,
+        }
+        return auth_utils.create_jwt(
+            token_type="refresh",
+            token_data=jwt_payload,
+            expire_timedelta=timedelta(days=settings.auth.refresh_token_expire_days),
+        )
+
+    async def get_current_active_auth_user(self, token: str) -> User:
+        user: User = await self.get_current_auth_user(
+            payload=self.get_current_token_payload(token=token)
+        )
+        if user.active:
+            return user
+        raise auth_exc.inactive
+
+    async def get_current_auth_user(
+        self,
+        payload: dict,
+    ) -> User:
+        auth_utils.validate_token_type(payload, "access")
+        return await self.get_user_by_token_sub(payload)
+
+    async def get_current_auth_user_for_refresh(
+        self,
+        payload: dict,
+    ) -> User:
+        auth_utils.validate_token_type(payload, "refresh")
+        return await self.get_user_by_token_sub(payload)
+
+    async def get_user_by_token_sub(self, payload: dict) -> User:
+        user_id: str | None = payload.get("sub")
+        user: User = await self.auth_repo.get_by(field="id", value=user_id, unique=True)  # type: ignore
+        if user:
+            return user
+        raise auth_exc.not_found
+
+    def get_current_token_payload(
+        self,
+        token: str,
+    ) -> dict:
+        try:
+            payload = auth_utils.jwt_decode(token=token)
+        except InvalidTokenError:
+            raise auth_exc.invalid_token
+        return payload

@@ -1,26 +1,30 @@
-from pydantic import BaseModel
+from pydantic import ConfigDict, EmailStr
+from src.core.schemas import BaseModel
 
 
-class AuthCodeRequest(BaseModel):
-    phone_number: str
+class CreateUser(BaseModel):
+    username: str
+    email: EmailStr
+    password: str
 
 
-class AuthCodeVerifyRequest(BaseModel):
-    phone_number: str
-    code: str
+class LoginSchema(BaseModel):
+    model_config = ConfigDict(strict=True, from_attributes=True)
+
+    username: str
+    password: str
 
 
-class AuthTokenResponse(BaseModel):
+class UserSchema(BaseModel):
+    model_config = ConfigDict(strict=True, from_attributes=True)
+
+    username: str
+    email: EmailStr
+    hashed_password: str
+    active: bool = True
+
+
+class Token(BaseModel):
     access_token: str
     refresh_token: str
-    token_type: str
-
-
-class TokenRefreshRequest(BaseModel):
-    refresh_token: str
-
-
-class TokenPairResponse(BaseModel):
-    access_token: str
-    refresh_token: str
-    token_type: str
+    token_type: str = "Bearer"

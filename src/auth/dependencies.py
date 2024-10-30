@@ -1,38 +1,43 @@
-from typing import Annotated
-
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
-from jose import JWTError, jwt
 
-from src.config import SECRET_AUTH
-from src.auth.utils import ALGORITHM
+from src.auth.models import BlacklistToken, User
+from src.auth.repositories import AuthRepository, BlacklistTokenRepository
 from src.auth.service import AuthService
-from src.database import get_async_session
+from src.core.dependencies import get_async_session
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/jwt/login/")
+
+
+async def get_auth_repository(session: AsyncSession = Depends(get_async_session)):
+    repository = AuthRepository(session=session, model=User)
+    yield repository
+
+
+async def get_blacklist_token_repository(
+    session: AsyncSession = Depends(get_async_session),
+):
+    repository = BlacklistTokenRepository(session=session, model=BlacklistToken)
+    yield repository
 
 
 async def get_auth_service(
-    session: Annotated[AsyncSession, Depends(get_async_session)],
+    users_repository: AuthRepository = Depends(get_auth_repository),
+    blacklist_token_repository: BlacklistTokenRepository = Depends(
+        get_blacklist_token_repository
+    ),
 ):
-    yield AuthService(session)
+    service = AuthService(
+        users_repository=users_repository,
+        blacklist_token_repository=blacklist_token_repository,
+    )
+    yield service
 
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/verify_code")
-
-credentials_exception = HTTPException(
-    status_code=status.HTTP_401_UNAUTHORIZED,
-    detail="Could not validate credentials",
-    headers={"WWW-Authenticate": "Bearer"},
-)
-
-
-async def get_current_user(token: str = Depends(oauth2_scheme)):
-    try:
-        payload = jwt.decode(token, SECRET_AUTH, algorithms=[ALGORITHM])
-        phone_number: str = payload.get("sub")  # type: ignore
-        if phone_number is None:
-            raise credentials_exception
-    except JWTError:
-        raise credentials_exception
-
-    return phone_number
+async def get_current_active_auth_user(
+    users_service: AuthService = Depends(get_auth_service),
+    token: str = Depends(oauth2_scheme),
+):
+    user = await users_service.get_current_active_auth_user(token=token)
+    yield user
