@@ -1,26 +1,27 @@
-from pydantic import BaseModel
+from typing import Annotated
+from pydantic import StringConstraints
+from pydantic_extra_types.phone_numbers import PhoneNumber
+from src.core.schemas import BaseModel
+from src.core.config import settings
+
+auth_code_length = settings.auth.auth_code_length
 
 
 class AuthCodeRequest(BaseModel):
-    phone_number: str
+    phone: Annotated[str, PhoneNumber]
 
 
-class AuthCodeVerifyRequest(BaseModel):
-    phone_number: str
-    code: str
+class AuthCodeVerify(AuthCodeRequest):
+    code: Annotated[
+        str,
+        StringConstraints(
+            max_length=auth_code_length,
+            min_length=auth_code_length,
+        ),
+    ]
 
 
-class AuthTokenResponse(BaseModel):
+class Token(BaseModel):
     access_token: str
     refresh_token: str
-    token_type: str
-
-
-class TokenRefreshRequest(BaseModel):
-    refresh_token: str
-
-
-class TokenPairResponse(BaseModel):
-    access_token: str
-    refresh_token: str
-    token_type: str
+    token_type: str = "Bearer"
