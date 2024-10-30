@@ -55,8 +55,8 @@ gh auth login
 
 ```bash
 # Клонируйте репозиторий
-git clone https://github.com/toastmanager/fastapi_jwt_boilerplate ~/fastapi_jwt_boilerplate
-cd fastapi_jwt_boilerplate
+git clone https://github.com/toastmanager/peak_it_2024_backend.git ~/peak_it_2024_backend
+cd peak_it_2024_backend
 # Настройте .env файлы
 cp .env.example .env
 nano .env

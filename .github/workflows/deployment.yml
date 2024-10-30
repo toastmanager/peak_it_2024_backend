@@ -22,7 +22,7 @@ jobs:
           username: ${{ secrets.VPS_USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            cd ~/fastapi_jwt_boilerplate
+            cd ~/peak_it_2024_backend
             gh repo sync
             docker compose build server
             docker rollout -f docker-compose.yml server
