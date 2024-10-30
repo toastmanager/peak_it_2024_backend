@@ -1,67 +1,75 @@
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 import uuid
 
 from jwt.exceptions import InvalidTokenError
 
 import src.auth.exceptions as auth_exc
 import src.auth.utils as auth_utils
-from src.auth.models import User
-from src.auth.repositories import AuthRepository, BlacklistTokenRepository
-from src.auth.schemas import CreateUser, Token
+from src.auth.models import AuthCode, User
+from src.auth.repositories import (
+    AuthCodeRepository,
+    AuthRepository,
+    BlacklistTokenRepository,
+)
+from src.auth.schemas import AuthCodeRequest, AuthCodeVerify, Token
 from src.core.config import settings
 
 
 class AuthService:
     auth_repo: AuthRepository
     blacklist_token_repo: BlacklistTokenRepository
+    auth_code_repo: AuthCodeRepository
 
     def __init__(
         self,
         users_repository: AuthRepository,
         blacklist_token_repository: BlacklistTokenRepository,
+        auth_code_repository: AuthCodeRepository,
     ) -> None:
         self.auth_repo = users_repository
         self.blacklist_token_repo = blacklist_token_repository
+        self.auth_code_repo = auth_code_repository
 
-    async def create_user(self, create_user_schema: CreateUser) -> Token:
-        data = create_user_schema.model_dump()
+    async def request_code(self, auth_code_request_schema: AuthCodeRequest):
+        auth_code_request_dict: dict = auth_code_request_schema.model_dump()
+        code = auth_utils.generate_auth_code(length=settings.auth.auth_code_length)
+        try:
+            await self.auth_code_repo.create(
+                attributes={
+                    "code": code,
+                    "phone": auth_code_request_dict["phone"],
+                    "expiry": datetime.now(tz=timezone.utc)
+                    + timedelta(seconds=settings.auth.auth_code_expire_seconds),
+                }
+            )
+            print(code)
+        except Exception as e:
+            raise e
 
-        user_with_that_username = await self.auth_repo.get_by(
-            field="username", value=data["username"]
-        )
-        user_with_that_email = await self.auth_repo.get_by(
-            field="email", value=data["email"]
-        )
-        if user_with_that_username:
-            raise auth_exc.already_exist_username
-        if user_with_that_email:
-            raise auth_exc.already_exist_email
+    async def verify_code(self, auth_code_verify_schema: AuthCodeVerify) -> Token:
+        data = auth_code_verify_schema.model_dump()
 
-        password = data.pop("password")
-        data["hashed_password"] = auth_utils.hash_password(password)
-
-        user = await self.auth_repo.create(attributes=data)
-        if not user:
-            raise auth_exc.failed_to_create
-
-        return self.create_token(user)
-
-    async def validate_auth_user(self, username: str, password: str) -> User:
-        user: User = await self.auth_repo.get_by(
-            field="username", value=username, unique=True
+        auth_code: AuthCode = await self.auth_code_repo.get_by(
+            field="code", value=data["code"], unique=True
         )  # type: ignore
-        if not user:
-            raise auth_exc.unauthenticated
+        if not auth_code:
+            raise auth_exc.no_matching_auth_code
+        await self.auth_code_repo.delete(auth_code)
+        if auth_code.expiry < datetime.now(tz=timezone.utc):
+            raise auth_exc.expired_auth_code
+        if auth_code.phone != auth_code_verify_schema.phone:
+            raise auth_exc.wrong_phone
 
-        if auth_utils.validate_password(
-            password=password, hashed_password=user.hashed_password
-        ):
-            return user
+        user_with_that_phone: User = await self.auth_repo.get_by(
+            field="phone", value=data["phone"], unique=True
+        )  # type: ignore
+        if not user_with_that_phone:
+            user = await self.auth_repo.create(attributes={"phone": data["phone"]})
+            if not user:
+                raise auth_exc.failed_to_create
+        else:
+            user = user_with_that_phone
 
-        raise auth_exc.unauthenticated
-
-    async def login(self, username: str, password: str) -> Token:
-        user: User = await self.validate_auth_user(username=username, password=password)
         return self.create_token(user)
 
     async def refresh_token(self, payload: dict) -> Token:
@@ -90,9 +98,9 @@ class AuthService:
     def create_access_token(self, user: User) -> str:
         jwt_payload = {
             "sub": user.id.hex,
-            "username": user.username,
-            "email": user.email,
+            "phone": user.phone,
             "superuser": user.superuser,
+            "active": user.active,
         }
         return auth_utils.create_jwt(token_type="access", token_data=jwt_payload)
 

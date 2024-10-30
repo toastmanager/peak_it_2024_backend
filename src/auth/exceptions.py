@@ -21,16 +21,18 @@ def invalid_token_type(received_type: str, expected_type: str) -> HTTPException:
         detail=f"invaild token type '{received_type}', expected '{expected_type}'",
     )
 
-
-already_exist_email = HTTPException(
-    status_code=status.HTTP_409_CONFLICT, detail="user with that email already exists"
-)
-
-already_exist_username = HTTPException(
-    status_code=status.HTTP_409_CONFLICT,
-    detail="user with that username already exists",
-)
-
 failed_to_create = HTTPException(
     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="failed to create user"
+)
+
+no_matching_auth_code = HTTPException(
+    status_code=status.HTTP_401_UNAUTHORIZED, detail="matching authorization code was not found"
+)
+
+expired_auth_code = HTTPException(
+    status_code=status.HTTP_401_UNAUTHORIZED, detail="provided auth code is expired"
+)
+
+wrong_phone = HTTPException(
+    status_code=status.HTTP_401_UNAUTHORIZED,  detail="wrong phone number"
 )

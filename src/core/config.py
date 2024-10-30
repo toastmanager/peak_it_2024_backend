@@ -33,6 +33,12 @@ class AuthSettings(BaseModel):
     refresh_token_expire_days: int = int(
         os.environ.get("REFRESH_TOKEN_EXPIRE_DAYS", "")
     )
+    auth_code_expire_seconds: int = int(
+        os.environ.get("AUTH_CODE_EXPIRE_SECONDS", "")
+    )
+    auth_code_length: int = int(
+        os.environ.get("AUTH_CODE_LENGTH", "")
+    )
 
 
 class S3Settings(BaseModel):

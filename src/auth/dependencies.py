@@ -2,8 +2,12 @@ from fastapi import Depends
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.auth.models import BlacklistToken, User
-from src.auth.repositories import AuthRepository, BlacklistTokenRepository
+from src.auth.models import AuthCode, BlacklistToken, User
+from src.auth.repositories import (
+    AuthCodeRepository,
+    AuthRepository,
+    BlacklistTokenRepository,
+)
 from src.auth.service import AuthService
 from src.core.dependencies import get_async_session
 
@@ -22,15 +26,24 @@ async def get_blacklist_token_repository(
     yield repository
 
 
+async def get_auth_code_repository(
+    session: AsyncSession = Depends(get_async_session),
+):
+    repository = AuthCodeRepository(session=session, model=AuthCode)
+    yield repository
+
+
 async def get_auth_service(
     users_repository: AuthRepository = Depends(get_auth_repository),
     blacklist_token_repository: BlacklistTokenRepository = Depends(
         get_blacklist_token_repository
     ),
+    auth_code_repository: AuthCodeRepository = Depends(get_auth_code_repository),
 ):
     service = AuthService(
         users_repository=users_repository,
         blacklist_token_repository=blacklist_token_repository,
+        auth_code_repository=auth_code_repository,
     )
     yield service
 

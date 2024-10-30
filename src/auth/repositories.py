@@ -1,4 +1,4 @@
-from src.auth.models import BlacklistToken, User
+from src.auth.models import AuthCode, BlacklistToken, User
 from src.core.repository import SQLAlchemyRepository
 
 
@@ -7,4 +7,7 @@ class AuthRepository(SQLAlchemyRepository[User]):
 
 
 class BlacklistTokenRepository(SQLAlchemyRepository[BlacklistToken]):
+    pass
+
+class AuthCodeRepository(SQLAlchemyRepository[AuthCode]):
     pass

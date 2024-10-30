@@ -1,3 +1,5 @@
+import random
+import string
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -74,3 +76,6 @@ def validate_token_type(
             received_type=token_type if token_type is not None else "",
             expected_type=expected_type,
         )
+
+def generate_auth_code(length: int):
+    return "".join(random.choices(string.digits, k=length))
